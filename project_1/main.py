@@ -3,53 +3,7 @@ import random
 import data
 from datetime import datetime, timedelta, timezone
 import pandas as pd
-
-class Settings:
-    
-    VISITS_PER_CLIENT_DISTRIBUTION = {
-    1: 0.45,   
-    2: 0.25,
-    3: 0.15,
-    4: 0.08,
-    5: 0.05,
-    6: 0.02,
-    }
-    
-    BANKS = {
-    "Сбербанк":    {"weight": 0.2, "systems": {"МИР": 0.6, "Visa": 0.2, "Mastercard": 0.2}},
-    "ВТБ":         {"weight": 0.2, "systems": {"МИР": 0.5, "Visa": 0.25, "Mastercard": 0.25}},
-    "Тинькофф":    {"weight": 0.2, "systems": {"МИР": 0.4, "Visa": 0.2, "Mastercard": 0.4}},
-    "Альфабанк":   {"weight": 0.2, "systems": {"МИР": 0.8, "Visa": 0.1, "Mastercard": 0.1}},
-    "Газпромбанк": {"weight": 0.2, "systems": {"МИР": 0.9, "Visa": 0.05, "Mastercard": 0.05}},
-    }
-    
-    BINS = {
-    "Сбербанк":    {"МИР": "2202 20", "Visa": "4276 31", "Mastercard": "5469 38"},
-    "ВТБ":         {"МИР": "2200 15", "Visa": "4272 29", "Mastercard": "5278 83"},
-    "Тинькофф":    {"МИР": "2201 16", "Visa": "4377 73", "Mastercard": "5536 91"},
-    "Альфабанк":   {"МИР": "2200 02", "Visa": "4289 06", "Mastercard": "5215 88"},
-    "Газпромбанк": {"МИР": "2200 38", "Visa": "4248 58", "Mastercard": "5262 33"},
-    }
-    
-    TARGET_ROWS = 50_000
-    
-    MSK = timezone(timedelta(hours=3))
-    
-    DATASET_START = datetime(2020, 1, 1, tzinfo=MSK)
-    DATASET_END = datetime(2023, 12, 31, tzinfo=MSK)
-    FIRST_VISIT_END = DATASET_END - timedelta(days=365)
-    
-    WORKING_HOURS_START = 8
-    WORKING_HOURS_END = 18
-    WORKING_DAYS = [0, 1, 2, 3, 4]
-    
-    ANALYSIS_PRICES = [500, 750, 1000, 1200, 1500, 1800, 2500, 3000, 4500, 6000]
-    
-    MAX_CARD_USES = 5
-    
-    CARD_REUSE_PROBABILITY = 0.7
-    
-    NEXT_VISIT_MAX_GAP_DAYS = 60
+import settings
 
 @dataclass
 class Client:
@@ -116,14 +70,14 @@ def generate_client(client_id):
         passport = generate_unique(generate_passport, used_passports),
         snils = generate_unique(generate_snils, used_snils),
         planned_visits = random.choices(
-            list(Settings.VISITS_PER_CLIENT_DISTRIBUTION.keys()),
-            list(Settings.VISITS_PER_CLIENT_DISTRIBUTION.values()))[0],
+            list(settings.Settings.VISITS_PER_CLIENT_DISTRIBUTION.keys()),
+            list(settings.Settings.VISITS_PER_CLIENT_DISTRIBUTION.values()))[0],
         cards = {},
         visits = []
     )
     
-avg_visits = sum(k * v for k, v in Settings.VISITS_PER_CLIENT_DISTRIBUTION.items())
-num_clients = round(Settings.TARGET_ROWS / avg_visits)
+avg_visits = sum(k * v for k, v in settings.Settings.VISITS_PER_CLIENT_DISTRIBUTION.items())
+num_clients = round(settings.Settings.TARGET_ROWS / avg_visits)
 clients = [generate_client(i) for i in range(num_clients)]
 
 active_clients = clients.copy()
@@ -148,13 +102,13 @@ class CardInfo:
     
 def generate_card():
     bank = random.choices(
-        list(Settings.BANKS.keys()),
-        [b["weight"] for b in Settings.BANKS.values()])[0]
-    systems = Settings.BANKS[bank]["systems"]
+        list(settings.Settings.BANKS.keys()),
+        [b["weight"] for b in settings.Settings.BANKS.values()])[0]
+    systems = settings.Settings.BANKS[bank]["systems"]
     system = random.choices(
         list(systems.keys()),
         list(systems.values()))[0]
-    bin_prefix = Settings.BINS[bank][system]
+    bin_prefix = settings.Settings.BINS[bank][system]
     return CardInfo(
             number = f"{bin_prefix}{random.randint(0, 99):02d} {random.randint(0, 9999):04d} {random.randint(0, 9999):04d}",
             bank = bank,
@@ -163,9 +117,9 @@ def generate_card():
     )
 
 def get_or_create_card(client):
-    usable = [c for c in client.cards.values() if c.uses < Settings.MAX_CARD_USES]
+    usable = [c for c in client.cards.values() if c.uses < settings.Settings.MAX_CARD_USES]
 
-    if usable and random.random() < Settings.CARD_REUSE_PROBABILITY:
+    if usable and random.random() < settings.Settings.CARD_REUSE_PROBABILITY:
         card = random.choice(usable)
         card.uses += 1         
     else:
@@ -175,35 +129,42 @@ def get_or_create_card(client):
     return card
 
 def random_visit_datetime():
-    total_days = (Settings.FIRST_VISIT_END - Settings.DATASET_START).days
+    total_days = (settings.Settings.FIRST_VISIT_END - settings.Settings.DATASET_START).days
     while True:
-        day = Settings.DATASET_START + timedelta(days=random.randint(0, total_days))
-        if day.weekday() in Settings.WORKING_DAYS:
+        day = settings.Settings.DATASET_START + timedelta(days=random.randint(0, total_days))
+        if day.weekday() in settings.Settings.WORKING_DAYS:
             break
-    hour = random.randint(Settings.WORKING_HOURS_START, Settings.WORKING_HOURS_END - 1)
+    hour = random.randint(settings.Settings.WORKING_HOURS_START, settings.Settings.WORKING_HOURS_END - 1)
     minute = random.choice([0, 15, 30, 45])
     return day.replace(hour=hour, minute=minute)
 
 def generate_analysis_date(date_visit: datetime):
     day = date_visit + timedelta(days=1)
     over_weekend = False
-    while day.weekday() not in Settings.WORKING_DAYS:
+    while day.weekday() not in settings.Settings.WORKING_DAYS:
         day += timedelta(days=1)
         over_weekend = True
 
     if over_weekend:
-        hour = random.randint(Settings.WORKING_HOURS_START, date_visit.hour)
+        hour = random.randint(settings.Settings.WORKING_HOURS_START, date_visit.hour)
     else:
-        hour = random.randint(date_visit.hour, Settings.WORKING_HOURS_END - 1)
+        hour = random.randint(date_visit.hour, settings.Settings.WORKING_HOURS_END - 1)
     return day.replace(hour=hour)
 
 def generate_next_visit_date(last_analysis_date: datetime):
-    day = last_analysis_date + timedelta(days=random.randint(2, Settings.NEXT_VISIT_MAX_GAP_DAYS))
-    while day.weekday() not in Settings.WORKING_DAYS:
+    day = last_analysis_date + timedelta(days=random.randint(2, settings.Settings.NEXT_VISIT_MAX_GAP_DAYS))
+    while day.weekday() not in settings.Settings.WORKING_DAYS:
         day += timedelta(days=1)
-    hour = random.randint(Settings.WORKING_HOURS_START, Settings.WORKING_HOURS_END - 1)
+    hour = random.randint(settings.Settings.WORKING_HOURS_START, settings.Settings.WORKING_HOURS_END - 1)
     minute = random.choice([0, 15, 30, 45])
     return day.replace(hour=hour, minute=minute)
+
+def generate_analysis_cost(items_count: int) -> int:
+    price = settings.Settings.BASE_ANALYSIS_PRICE
+    for _ in range(items_count - 1):
+        price += random.randint(*settings.Settings.PRICE_PER_EXTRA_ITEM)
+    price += random.randint(*settings.Settings.PRICE_NOISE)
+    return max(price, settings.Settings.BASE_ANALYSIS_PRICE)
 
 def generate_visit(visit_id):
     
@@ -228,6 +189,11 @@ def generate_visit(visit_id):
     }
     
     doctor_entry = random.choice(DOCTORS_BY_GENDER[client.gender])
+
+    analyses_list = random.sample(
+        doctor_entry["analyses"],
+        k=random.randint(1, min(5, len(doctor_entry["analyses"])))
+    )
     
     if client.visits:
         date_visit = generate_next_visit_date(client.visits[-1].date_analyses)
@@ -240,14 +206,14 @@ def generate_visit(visit_id):
         symptoms = ", ".join(random.sample(doctor_entry["symptoms"], k = random.randint(1, 10))),
         date_visit = date_visit,
         card = get_or_create_card(client).number,
-        analyses = ", ".join(random.sample(doctor_entry["analyses"], k = random.randint(1, min(5, len(doctor_entry["analyses"]))))),
+        analyses=", ".join(analyses_list),
         date_analyses = generate_analysis_date(date_visit),
-        analyses_cost = random.choice(Settings.ANALYSIS_PRICES)
+        analyses_cost=generate_analysis_cost(len(analyses_list)),
     )
     client.visits.append(visit)
     return visit
         
-visits = [generate_visit(i) for i in range(Settings.TARGET_ROWS)]
+visits = [generate_visit(i) for i in range(settings.Settings.TARGET_ROWS)]
 
 def build_rows():
     pairs = [(c, v) for c in clients for v in c.visits]
