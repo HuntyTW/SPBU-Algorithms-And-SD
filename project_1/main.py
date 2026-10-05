@@ -154,7 +154,7 @@ def generate_analysis_date(date_visit: datetime):
     return day.replace(hour=hour)
 
 def generate_next_visit_date(last_analysis_date: datetime):
-    day = last_analysis_date + timedelta(days=random.randint(1, settings.Settings.NEXT_VISIT_MAX_GAP_DAYS))
+    day = last_analysis_date + timedelta(days=random.randint(2, settings.Settings.NEXT_VISIT_MAX_GAP_DAYS))
     while day.weekday() not in settings.Settings.WORKING_DAYS:
         day += timedelta(days=1)
     hour = random.randint(settings.Settings.WORKING_HOURS_START, settings.Settings.WORKING_HOURS_END - 1)
