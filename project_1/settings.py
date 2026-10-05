@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 class Settings:
-    
+
     VISITS_PER_CLIENT_DISTRIBUTION = {
     1: 0.45,   
     2: 0.25,
@@ -10,7 +10,7 @@ class Settings:
     5: 0.05,
     6: 0.02,
     }
-    
+
     BANKS = {
     "Сбербанк":    {"weight": 0.2, "systems": {"МИР": 0.6, "Visa": 0.2, "Mastercard": 0.2}},
     "ВТБ":         {"weight": 0.2, "systems": {"МИР": 0.5, "Visa": 0.25, "Mastercard": 0.25}},
@@ -18,7 +18,7 @@ class Settings:
     "Альфабанк":   {"weight": 0.2, "systems": {"МИР": 0.8, "Visa": 0.1, "Mastercard": 0.1}},
     "Газпромбанк": {"weight": 0.2, "systems": {"МИР": 0.9, "Visa": 0.05, "Mastercard": 0.05}},
     }
-    
+
     BINS = {
     "Сбербанк":    {"МИР": "2202 20", "Visa": "4276 31", "Mastercard": "5469 38"},
     "ВТБ":         {"МИР": "2200 15", "Visa": "4272 29", "Mastercard": "5278 83"},
@@ -26,25 +26,63 @@ class Settings:
     "Альфабанк":   {"МИР": "2200 02", "Visa": "4289 06", "Mastercard": "5215 88"},
     "Газпромбанк": {"МИР": "2200 38", "Visa": "4248 58", "Mastercard": "5262 33"},
     }
-    
+
     TARGET_ROWS = 50_000
-    
+
     MSK = timezone(timedelta(hours=3))
-    
+
     DATASET_START = datetime(2020, 1, 1, tzinfo=MSK)
     DATASET_END = datetime(2023, 12, 31, tzinfo=MSK)
     FIRST_VISIT_END = DATASET_END - timedelta(days=365)
-    
+
     WORKING_HOURS_START = 8
     WORKING_HOURS_END = 18
     WORKING_DAYS = [0, 1, 2, 3, 4]
-    
-    BASE_ANALYSIS_PRICE = 500          
-    PRICE_PER_EXTRA_ITEM = (300, 800)  
-    PRICE_NOISE = (-100, 150)         
-    
+
+    BASE_ANALYSIS_PRICE = 500
+    PRICE_PER_EXTRA_ITEM = (300, 800)
+    PRICE_NOISE = (-100, 150)
+
     MAX_CARD_USES = 5
-    
+
     CARD_REUSE_PROBABILITY = 0.7
-    
+
     NEXT_VISIT_MAX_GAP_DAYS = 60
+
+
+def configure_settings():
+    answer = input("Настроить вероятности банков вручную? (y/n): ").strip().lower()
+    if answer == "y":
+        while True:
+            weights = {}
+            for bank in Settings.BANKS:
+                while True:
+                    try:
+                        value = float(input(f"Вероятность для {bank} (0-1): "))
+                    except ValueError:
+                        print("Введите число")
+                        continue
+                    if value < 0 or value > 1:
+                        print("Значение должно быть от 0 до 1")
+                        continue
+                    weights[bank] = value
+                    break
+            if abs(sum(weights.values()) - 1.0) > 0.001:
+                print(f"Сумма вероятностей должна быть равна 1, получено {sum(weights.values()):.3f}")
+                continue
+            for bank, value in weights.items():
+                Settings.BANKS[bank]["weight"] = value
+            break
+
+    while True:
+        rows = input(f"Количество строк датасета (минимум 50000): ").strip()
+        try:
+            rows = int(rows)
+        except ValueError:
+            print("Введите целое число")
+            continue
+        if rows < 50_000:
+            print("Значение не может быть меньше 50000")
+            continue
+        Settings.TARGET_ROWS = rows
+        break

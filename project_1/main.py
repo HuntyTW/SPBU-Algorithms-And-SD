@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import settings
 
+settings.configure_settings()
+
 @dataclass
 class Client:
     client_id: int
@@ -152,19 +154,17 @@ def generate_analysis_date(date_visit: datetime):
     return day.replace(hour=hour)
 
 def generate_next_visit_date(last_analysis_date: datetime):
-    day = last_analysis_date + timedelta(days=random.randint(2, settings.Settings.NEXT_VISIT_MAX_GAP_DAYS))
+    day = last_analysis_date + timedelta(days=random.randint(1, settings.Settings.NEXT_VISIT_MAX_GAP_DAYS))
     while day.weekday() not in settings.Settings.WORKING_DAYS:
         day += timedelta(days=1)
     hour = random.randint(settings.Settings.WORKING_HOURS_START, settings.Settings.WORKING_HOURS_END - 1)
     minute = random.choice([0, 15, 30, 45])
     return day.replace(hour=hour, minute=minute)
 
-def generate_analysis_cost(items_count: int) -> int:
-    price = settings.Settings.BASE_ANALYSIS_PRICE
-    for _ in range(items_count - 1):
-        price += random.randint(*settings.Settings.PRICE_PER_EXTRA_ITEM)
-    price += random.randint(*settings.Settings.PRICE_NOISE)
-    return max(price, settings.Settings.BASE_ANALYSIS_PRICE)
+DOCTORS_BY_GENDER = {
+    g: [d for d in data.DOCTORS_DATA if d.get("gender", g) == g]
+    for g in ("M", "F")
+    }
 
 def generate_visit(visit_id):
     
@@ -182,11 +182,6 @@ def generate_visit(visit_id):
             active_clients.pop()
         else:
             break
-        
-    DOCTORS_BY_GENDER = {
-    g: [d for d in data.DOCTORS_DATA if d.get("gender", g) == g]
-    for g in ("M", "F")
-    }
     
     doctor_entry = random.choice(DOCTORS_BY_GENDER[client.gender])
 
@@ -208,7 +203,7 @@ def generate_visit(visit_id):
         card = get_or_create_card(client).number,
         analyses=", ".join(analyses_list),
         date_analyses = generate_analysis_date(date_visit),
-        analyses_cost=generate_analysis_cost(len(analyses_list)),
+        analyses_cost=sum(data.ANALYSES_PRICES_DICT[i] for i in analyses_list),
     )
     client.visits.append(visit)
     return visit
@@ -237,3 +232,5 @@ def build_rows():
 
 df = pd.DataFrame(build_rows())
 df.to_excel("dataset.xlsx", index=False)
+
+print("Генерация завершена")
