@@ -1,43 +1,25 @@
+import numpy as np
 import pandas as pd
-import openpyxl
-import random
 from collections import Counter
 from functools import lru_cache
 from data_group import DOCTOR_PROFILES, classify_research
-import numpy as np
 
-df = pd.read_excel('dataset.xlsx')
+df = pd.read_excel("dataset.xlsx")
 
-def generate_id(values, prefix):
-    uniq = list(values.unique())
-    nums = random.sample(range(100000, 100000 + len(uniq) * 10), len(uniq))
-    return {v: f"{prefix}{n}" for v, n in zip(uniq, nums)}
-
-def pseudonymize(df):
-    client_map = generate_id(df["СНИЛС"], "C")
-
-    df = df.copy()
-    df["ID клиента"] = df["СНИЛС"].map(client_map)
-
-    key = df[["ID клиента", "ФИО", "Паспортные данные", "СНИЛС", "Карта оплаты"]].drop_duplicates()
-
-    first = ["ID клиента"]
-    df = df[first + [c for c in df.columns if c not in first]]
-    df = df.drop(columns=["ФИО", "Паспортные данные", "СНИЛС", "Карта оплаты"])
-    return df, key
-
-anon_df, key = pseudonymize(df)
-
-key.to_excel("key.xlsx", index=False)
+STAR_COLUMNS = ["Паспортные данные", "СНИЛС"]
+SUPPRESSION_LIMIT = 0.05
 
 QI_COLUMNS = [
+    "ФИО",
     "Симптомы",
     "Выбор врача",
     "Дата посещения врача",
     "Анализы",
     "Дата получения анализов",
     "Стоимость анализов",
+    "Карта оплаты",
 ]
+
 
 def ask_quasi_identifiers():
     print("Столбцы:")
@@ -49,7 +31,15 @@ def ask_quasi_identifiers():
             return [QI_COLUMNS[n - 1] for n in sorted(set(map(int, raw)))]
         print(f"Нужно ввести хотя бы один номер от 1 до {len(QI_COLUMNS)}")
 
-qi = ask_quasi_identifiers()
+
+def get_needed_k(n):
+    if n <= 51_000:
+        return 10
+    elif n <= 105_000:
+        return 7
+    else:
+        return 5
+
 
 def k_anonimity(table, qi, flag=False):
     keys = list(zip(*(table[c] for c in qi)))
@@ -74,7 +64,53 @@ def k_anonimity(table, qi, flag=False):
 
     return k, None, None
 
+
+def small_groups_share(table, qi, needed_k):
+    groups = Counter(zip(*(table[c] for c in qi)))
+    k = min(groups.values())
+    bad_rows = sum(size for size in groups.values() if size < needed_k)
+    return k, bad_rows / len(table)
+
+
+def anonimise_fio(value, level):
+    if level == 0:
+        return value
+    if level >= 2:
+        return "*"
+    patronymic = value.split()[-1]
+    return "М" if patronymic.endswith("ич") else "Ж"
+
+
+BINS = {
+    "Сбербанк":    {"МИР": "2202 20", "Visa": "4276 31", "Mastercard": "5469 38"},
+    "ВТБ":         {"МИР": "2200 15", "Visa": "4272 29", "Mastercard": "5278 83"},
+    "Тинькофф":    {"МИР": "2201 16", "Visa": "4377 73", "Mastercard": "5536 91"},
+    "Альфабанк":   {"МИР": "2200 02", "Visa": "4289 06", "Mastercard": "5215 88"},
+    "Газпромбанк": {"МИР": "2200 38", "Visa": "4248 58", "Mastercard": "5262 33"},
+}
+
+CARD_BY_BIN = {
+    bin_code.replace(" ", ""): (bank, system)
+    for bank, systems in BINS.items()
+    for system, bin_code in systems.items()
+}
+
+
+def anonimise_card(value, level):
+    if level == 0:
+        return value
+    if level >= 3:
+        return "*"
+    digits = "".join(ch for ch in str(value) if ch.isdigit())
+    bank, system = CARD_BY_BIN.get(digits[:6], ("Другой банк", "Другая система"))
+    if level == 1:
+        return f"{bank}, {system}"
+    return system
+
+
 def anonimise_date(value, level):
+    if level == 0:
+        return value
     if level == 1:
         return value[:10]
     if level == 2:
@@ -84,11 +120,11 @@ def anonimise_date(value, level):
         return f"{value[:4]}-Q{quarter}"
     if level == 4:
         return value[:4]
-    if level >= 5:
-        return "*"
-    return value
+    return "*"
+
 
 PRICE_STEPS = {1: 5000, 2: 10000}
+
 
 def anonimise_cost(value, level):
     if level == 0:
@@ -99,7 +135,8 @@ def anonimise_cost(value, level):
     price = int(str(value).split()[0])
     bucket = (price - 1) // step
     return f"{bucket * step + 1}-{(bucket + 1) * step}"
-    
+
+
 def anonimise_sympthoms(value, level):
     if level == 0:
         return value
@@ -112,80 +149,97 @@ def anonimise_sympthoms(value, level):
         return "4-7"
     return "8-10"
 
+
 PROFILE_BY_SPECIALTY = {
     specialty: profile
     for profile, specialties in DOCTOR_PROFILES.items()
     for specialty in specialties
 }
 
+
 def anonimise_doctor(value, level):
+    if level == 0:
+        return value
     if level == 1:
         return PROFILE_BY_SPECIALTY.get(value, "other")
-    if level >= 2:
-        return "*"
-    return value
+    return "*"
+
 
 @lru_cache(maxsize=None)
 def research_category(name):
     return classify_research(name)
 
+
 def anonimise_analyses(value, level):
-    if level >= 3:
-        return "*"
     if level == 0:
         return value
-
+    if level >= 3:
+        return "*"
     categories = {research_category(a.strip()) for a in value.split(",")}
-
     if level == 1:
         return ", ".join(sorted(categories))
     return str(len(categories))
 
-def anonymize(anon_df, qi, funcs, max_levels):
-    n = len(anon_df)
-
-    if n <= 51_000:
-        needed_k = 10
-    elif n <= 105_000:
-        needed_k = 7
-    else:
-        needed_k = 5
-    levels = {c: 0 for c in qi}
-    full_anon_df = anon_df.copy()
-
-    k, _, _ = k_anonimity(full_anon_df, qi)
-
-    while k < needed_k:
-        candidates = [c for c in qi if levels[c] < max_levels[c]]
-        if not candidates:
-            break
-
-        col = max(candidates, key=lambda c: full_anon_df[c].nunique())
-        levels[col] += 1
-        level = levels[col]
-        full_anon_df[col] = anon_df[col].map(lambda v: funcs[col](v, level))
-
-        k, _, _ = k_anonimity(full_anon_df, qi)
-
-    return full_anon_df, levels, k
 
 funcs = {
+    "ФИО": anonimise_fio,
     "Симптомы": anonimise_sympthoms,
     "Выбор врача": anonimise_doctor,
     "Дата посещения врача": anonimise_date,
     "Анализы": anonimise_analyses,
     "Дата получения анализов": anonimise_date,
     "Стоимость анализов": anonimise_cost,
+    "Карта оплаты": anonimise_card,
 }
 
 max_levels = {
+    "ФИО": 2,
     "Симптомы": 2,
     "Выбор врача": 2,
     "Дата посещения врача": 5,
     "Анализы": 3,
     "Дата получения анализов": 5,
     "Стоимость анализов": 3,
+    "Карта оплаты": 3,
 }
+
+
+def generalize_column(source, col, level):
+    return source[col].map(lambda v: funcs[col](v, level))
+
+
+def remove_direct_identifiers(source):
+    table = source.copy()
+    for col in STAR_COLUMNS:
+        table[col] = "*"
+    return table
+
+
+def suppress(table, qi, needed_k):
+    keys = list(zip(*(table[c] for c in qi)))
+    groups = Counter(keys)
+    kept = table[[groups[key] >= needed_k for key in keys]]
+    return kept, len(table) - len(kept)
+
+
+def anonymize(source, base, qi, needed_k):
+    levels = {c: 0 for c in qi}
+    table = base.copy()
+
+    k, share = small_groups_share(table, qi, needed_k)
+
+    for reserve in (1, 0):
+        while share > SUPPRESSION_LIMIT:
+            candidates = [c for c in qi if levels[c] < max_levels[c] - reserve]
+            if not candidates:
+                break
+            col = max(candidates, key=lambda c: table[c].nunique())
+            levels[col] += 1
+            table[col] = generalize_column(source, col, levels[col])
+            k, share = small_groups_share(table, qi, needed_k)
+
+    table, removed = suppress(table, qi, needed_k)
+    return table, levels, removed
 
 
 def print_report(title, table, qi):
@@ -197,18 +251,10 @@ def print_report(title, table, qi):
         print("  ", line)
     print(f"Уникальных строк (K = 1): {len(unique_rows)}")
     if len(unique_rows) > 0:
-        print(unique_rows.head(10).to_string(index=False, max_colwidth=25))
+        print(unique_rows[qi].head(10).to_string(index=False, max_colwidth=25))
         if len(unique_rows) > 10:
             print(f"... и ещё {len(unique_rows) - 10}")
 
-print_report("До обобщения", anon_df, qi)
-
-result_df, levels, k = anonymize(anon_df, qi, funcs, max_levels)
-
-print("\nИтоговые уровни:", levels)
-print_report("После обобщения", result_df, qi)
-
-result_df.to_excel("dataset_anonymized.xlsx", index=False)
 
 def column_kld(original, generalized):
     n = len(original)
@@ -224,12 +270,28 @@ def column_kld(original, generalized):
 
 
 def utility_loss(original_df, generalized_df, qi):
+    original_df = original_df.loc[generalized_df.index]
     per_column = {c: column_kld(original_df[c], generalized_df[c]) for c in qi}
     return per_column, sum(per_column.values())
 
-per_column, total = utility_loss(anon_df, result_df, qi)
 
+qi = ask_quasi_identifiers()
+
+print_report("Входной датасет", df, qi)
+
+needed_k = get_needed_k(len(df))
+
+base_df = remove_direct_identifiers(df)
+result_df, levels, removed = anonymize(df, base_df, qi, needed_k)
+
+print("\nИтоговые уровни обобщения:", levels)
+print(f"Удалено строк (локальное подавление): {removed} ({removed / len(df):.2%})")
+print_report("Обезличенный датасет", result_df, qi)
+
+per_column, total = utility_loss(df, result_df, list(df.columns))
 print("\n=== Потеря полезности (KLD, бит) ===")
 for col, value in per_column.items():
     print(f"{col}: {value:.4f}")
 print(f"Сумма: {total:.4f}")
+
+result_df.to_excel("dataset_anonymized.xlsx", index=False)
