@@ -4,6 +4,8 @@ from collections import Counter
 from functools import lru_cache
 from data_group import DOCTOR_PROFILES, classify_research
 
+print("Читаем датасет")
+
 df = pd.read_excel("dataset.xlsx")
 
 STAR_COLUMNS = ["Паспортные данные", "СНИЛС"]
@@ -22,7 +24,7 @@ QI_COLUMNS = [
 
 
 def ask_quasi_identifiers():
-    print("Столбцы:")
+    print("\nСтолбцы:")
     for i, col in enumerate(QI_COLUMNS, 1):
         print(f"{i}. {col}")
     while True:
@@ -274,10 +276,9 @@ def utility_loss(original_df, generalized_df, qi):
     per_column = {c: column_kld(original_df[c], generalized_df[c]) for c in qi}
     return per_column, sum(per_column.values())
 
+print_report("Входной датасет", df, list(df.columns))
 
 qi = ask_quasi_identifiers()
-
-print_report("Входной датасет", df, qi)
 
 needed_k = get_needed_k(len(df))
 print(f"\nДопустимое значение K для {len(df)} строк: K >= {needed_k}")
