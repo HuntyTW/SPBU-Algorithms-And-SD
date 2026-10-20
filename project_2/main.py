@@ -280,6 +280,7 @@ qi = ask_quasi_identifiers()
 print_report("Входной датасет", df, qi)
 
 needed_k = get_needed_k(len(df))
+print(f"\nДопустимое значение K для {len(df)} строк: K >= {needed_k}")
 
 base_df = remove_direct_identifiers(df)
 result_df, levels, removed = anonymize(df, base_df, qi, needed_k)
